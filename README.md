@@ -16,7 +16,7 @@ To work on or compile Starship Vector, you will need the standard Tauri dependen
 - **[Node.js](https://nodejs.org/)** (v18 or higher)
 - **[Rust](https://www.rust-lang.org/tools/install)** (`rustup`, `cargo`, `rustc`)
 
-### MacOS (Your Current Environment)
+### MacOS
 - Xcode Command Line Tools: `xcode-select --install`
 
 ### Windows Compilation
@@ -54,18 +54,3 @@ npx tauri build
 This will compile the frontend and the Rust backend in release mode. The resulting application binaries and installers will be located in:
 `src-tauri/target/release/bundle/`
 
-### Publishing Releases
-When you want to share a release on GitHub, **do not** manually upload the entire application directory or its uncompiled source code as a zipped "Release". GitHub automatically provides a zip of your source code when you cut a release tag.
-
-Instead, you should only upload the **Compiled Application Bundles**:
-- On **macOS**, upload the `.dmg` or `.app.tar.gz` from `src-tauri/target/release/bundle/dmg/`
-- On **Windows**, upload the `.msi` or `.exe` installer setup from `src-tauri/target/release/bundle/msi/`
-- On **Linux**, upload the `.AppImage` or `.deb` packages.
-
-**Note on Git & GitHub:**
-The root `.gitignore` and `src-tauri/.gitignore` are already configured to prevent heavy, compiled folders from being committed to your repository. 
-The following folders **should always be omitted** from Git:
-- `/node_modules/` (Local JS packages)
-- `/dist/` (Compiled frontend assets)
-- `/src-tauri/target/` (The Rust compiled backend binaries—often gigabytes in size)
-- `/.env` or `.local` files
