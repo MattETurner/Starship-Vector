@@ -13,6 +13,12 @@ pub struct TableResponse {
     pub total_rows: usize,
 }
 
+#[derive(Serialize)]
+pub struct TimelineData {
+    pub bucket: String,
+    pub count: usize,
+}
+
 #[tauri::command]
 pub fn load_file(state: tauri::State<AppState>, path: &str) -> Result<String, String> {
     let conn = state.db.lock().map_err(|e| e.to_string())?;
@@ -363,4 +369,96 @@ pub fn export_csv(
     conn.execute(&query, []).map_err(|e| format!("Export error: {} - {}", e, query))?;
 
     Ok("Exported successfully".to_string())
+}
+
+#[tauri::command]
+pub fn get_timeline_data(
+    state: tauri::State<AppState>,
+    column: &str,
+    global_search: Option<String>,
+    filters: Option<Vec<Filter>>,
+) -> Result<Vec<TimelineData>, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+
+    // Fetch schema columns for global search dynamic bindings
+    let mut stmt = conn
+        .prepare("PRAGMA table_info('dataset')")
+        .map_err(|e| e.to_string())?;
+
+    let columns = stmt
+        .query_map([], |row| {
+            let name: String = row.get(1)?;
+            Ok(name)
+        })
+        .map_err(|e| e.to_string())?;
+
+    let mut cols = Vec::new();
+    for c in columns {
+        if let Ok(name) = c {
+            if name != "_row_id" {
+                cols.push(name);
+            }
+        }
+    }
+
+    let mut inner_where = build_where_clause(&cols, &global_search, &filters, &None);
+    let safe_col = format!("\"{}\"", column.replace("\"", "\"\""));
+
+    if inner_where.is_empty() {
+        inner_where = format!("WHERE {} IS NOT NULL", safe_col);
+    } else {
+        inner_where = format!("{} AND {} IS NOT NULL", inner_where, safe_col);
+    }
+
+    // Determine the min and max timestamp boundaries
+    let bounds_query = format!("SELECT extract('epoch' FROM min(CAST({0} AS TIMESTAMP))), extract('epoch' FROM max(CAST({0} AS TIMESTAMP))) FROM dataset {1}", safe_col, inner_where);
+    let mut stmt = conn.prepare(&bounds_query).map_err(|e| format!("Bounds query error: {} - {}", e, bounds_query))?;
+    
+    let (min_epoch, max_epoch): (Option<f64>, Option<f64>) = stmt.query_row([], |row| {
+        Ok((row.get(0)?, row.get(1)?))
+    }).unwrap_or((None, None));
+
+    let min_e = min_epoch.unwrap_or(0.0);
+    let max_e = max_epoch.unwrap_or(0.0);
+    
+    if min_e == 0.0 && max_e == 0.0 {
+        return Ok(Vec::new()); // No data or invalid column
+    }
+
+    let diff = max_e - min_e;
+    
+    // We want roughly 60 buckets (approx visual width of graph)
+    let num_buckets = 60.0;
+    let mut bucket_size = diff / num_buckets;
+    
+    if bucket_size < 1.0 {
+        bucket_size = 1.0; // minimum bucket size
+    }
+
+    // DuckDB query to group timestamps into buckets
+    let query = format!(
+        "SELECT CAST(to_timestamp(floor(extract('epoch' FROM CAST({} AS TIMESTAMP)) / {}) * {}) AS VARCHAR) as bucket, count(*) as count 
+         FROM dataset {} 
+         GROUP BY 1 
+         ORDER BY 1 ASC",
+        safe_col, bucket_size, bucket_size, inner_where
+    );
+    
+    let mut stmt = conn.prepare(&query).map_err(|e| format!("Bucket query error: {} - {}", e, query))?;
+    
+    let rows = stmt.query_map([], |row| {
+        Ok(TimelineData {
+            bucket: row.get(0)?,
+            count: row.get(1)?,
+        })
+    }).map_err(|e| e.to_string())?;
+
+    let mut data = Vec::new();
+    for row in rows {
+        if let Ok(val) = row {
+            data.push(val);
+        }
+    }
+
+    Ok(data)
 }
