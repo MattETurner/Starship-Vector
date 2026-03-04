@@ -1,22 +1,16 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { invoke } from '@tauri-apps/api/core';
-
-export interface Filter {
-    column: string;
-    operator: string;
-    values: string[];
-}
-
-interface TimelineData {
-    bucket: string;
-    count: number;
-}
+import { api, type Filter } from '../api/data';
 
 interface TimelineHeatmapProps {
     timeColumn: string;
     globalSearch: string;
     filters: Filter[];
     onRangeSelect: (start: string, end: string) => void;
+}
+
+interface TimelineData {
+    bucket: string;
+    count: number;
 }
 
 const TimelineHeatmap: React.FC<TimelineHeatmapProps> = ({ timeColumn, globalSearch, filters, onRangeSelect }) => {
@@ -44,11 +38,7 @@ const TimelineHeatmap: React.FC<TimelineHeatmapProps> = ({ timeColumn, globalSea
         let active = true;
         setLoading(true);
 
-        invoke<TimelineData[]>('get_timeline_data', {
-            column: timeColumn,
-            globalSearch,
-            filters // Zoom timeline context proportionally to active filters
-        }).then(res => {
+        api.getTimelineData(timeColumn, globalSearch, filters).then(res => {
             if (active) {
                 setData(res);
             }
@@ -221,8 +211,6 @@ const TimelineHeatmap: React.FC<TimelineHeatmapProps> = ({ timeColumn, globalSea
                     <span>Activity Timeline: {timeColumn}</span>
                 </span>
             </div>
-
-
 
             <style>{`
         @keyframes slide {

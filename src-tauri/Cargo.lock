@@ -4504,9 +4504,11 @@ dependencies = [
 
 [[package]]
 name = "tauri-app"
-version = "0.1.1"
+version = "0.2.2"
 dependencies = [
  "duckdb",
+ "once_cell",
+ "regex",
  "serde",
  "serde_json",
  "tauri",

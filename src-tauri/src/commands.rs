@@ -29,16 +29,32 @@ pub fn load_file(state: tauri::State<AppState>, path: &str) -> Result<String, St
     conn.execute_batch("DROP SEQUENCE IF EXISTS row_id_seq;")
         .map_err(|e| e.to_string())?;
 
-    // Create new table datasets from file. We'll use read_csv_auto or read_parquet automatically based on extension,
-    // but DuckDB's simple SELECT * FROM 'path' figures it out.
-    conn.execute_batch(
-        &format!("
-            CREATE SEQUENCE row_id_seq;
-            CREATE TABLE dataset AS SELECT nextval('row_id_seq') as _row_id, * FROM '{}';
-        ", path)
-    ).map_err(|e| e.to_string())?;
+    // Determine whether this looks like a log file by extension.
+    let ext = std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_lowercase())
+        .unwrap_or_default();
 
-    Ok("File loaded successfully".to_string())
+    let is_log = matches!(ext.as_str(), "log" | "syslog" | "access" | "error");
+
+    if is_log {
+        // Stream-parse the log file and insert into DuckDB.
+        // Returns the detected format name for the success message.
+        let fmt_name = crate::logparser::detect_and_load(&conn, path)?;
+        Ok(format!("Loaded as «{fmt_name}»"))
+    } else {
+        // For CSV / JSON / Parquet DuckDB's reader handles everything.
+        conn.execute_batch(
+            &format!(
+                "CREATE SEQUENCE row_id_seq;
+                 CREATE TABLE dataset AS SELECT nextval('row_id_seq') as _row_id, * FROM '{}';",
+                path
+            )
+        )
+        .map_err(|e| e.to_string())?;
+        Ok("File loaded successfully".to_string())
+    }
 }
 
 #[tauri::command]
@@ -59,11 +75,9 @@ pub fn get_schema(state: tauri::State<AppState>) -> Result<Vec<SchemaColumn>, St
         .map_err(|e| e.to_string())?;
 
     let mut schema = Vec::new();
-    for col in columns {
-        if let Ok(c) = col {
-            if c.name != "_row_id" {
-                schema.push(c);
-            }
+    for c in columns.flatten() {
+        if c.name != "_row_id" {
+            schema.push(c);
         }
     }
 
@@ -179,11 +193,9 @@ pub fn fetch_data(
         .map_err(|e| e.to_string())?;
 
     let mut cols = Vec::new();
-    for c in columns {
-        if let Ok(name) = c {
-            if name != "_row_id" {
-                cols.push(name);
-            }
+    for name in columns.flatten() {
+        if name != "_row_id" {
+            cols.push(name);
         }
     }
 
@@ -227,11 +239,9 @@ pub fn fetch_data(
         .map_err(|e| e.to_string())?;
 
     let mut data = Vec::new();
-    for row in rows {
-        if let Ok(json_str) = row {
-            if let Ok(val) = serde_json::from_str(&json_str) {
-                data.push(val);
-            }
+    for json_str in rows.flatten() {
+        if let Ok(val) = serde_json::from_str(&json_str) {
+            data.push(val);
         }
     }
 
@@ -263,11 +273,9 @@ pub fn get_distinct_values(
         .map_err(|e| e.to_string())?;
 
     let mut cols = Vec::new();
-    for c in columns {
-        if let Ok(name) = c {
-            if name != "_row_id" {
-                cols.push(name);
-            }
+    for name in columns.flatten() {
+        if name != "_row_id" {
+            cols.push(name);
         }
     }
 
@@ -295,10 +303,8 @@ pub fn get_distinct_values(
     }).map_err(|e| e.to_string())?;
     
     let mut values = Vec::new();
-    for row in rows {
-        if let Ok(v) = row {
-            values.push(v);
-        }
+    for v in rows.flatten() {
+        values.push(v);
     }
     
     Ok(values)
@@ -330,12 +336,10 @@ pub fn export_csv(
     let mut cols = Vec::new();
     let mut select_cols = Vec::new(); // Columns to actually export (excluding our internal _row_id)
     
-    for c in columns {
-        if let Ok(name) = c {
-            if name != "_row_id" {
-                cols.push(name.clone());
-                select_cols.push(format!("\"{}\"", name.replace("\"", "\"\"")));
-            }
+    for name in columns.flatten() {
+        if name != "_row_id" {
+            cols.push(name.clone());
+            select_cols.push(format!("\"{}\"", name.replace("\"", "\"\"")));
         }
     }
 
@@ -393,11 +397,9 @@ pub fn get_timeline_data(
         .map_err(|e| e.to_string())?;
 
     let mut cols = Vec::new();
-    for c in columns {
-        if let Ok(name) = c {
-            if name != "_row_id" {
-                cols.push(name);
-            }
+    for name in columns.flatten() {
+        if name != "_row_id" {
+            cols.push(name);
         }
     }
 
@@ -454,10 +456,8 @@ pub fn get_timeline_data(
     }).map_err(|e| e.to_string())?;
 
     let mut data = Vec::new();
-    for row in rows {
-        if let Ok(val) = row {
-            data.push(val);
-        }
+    for val in rows.flatten() {
+        data.push(val);
     }
 
     Ok(data)
