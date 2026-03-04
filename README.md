@@ -82,4 +82,15 @@ This starts Vite on `localhost:1420` and compiles the Rust backend in developmen
 npx tauri build
 ```
 
-Output bundles are written to `src-tauri/target/release/bundle/`.
+### macOS Gatekeeper Notice
+
+When you build the app locally without an Apple Developer certificate, macOS Gatekeeper may show a warning such as **"Vector is damaged and can't be opened"** when you try to run it. This is expected for unsigned applications and does not mean the app is actually damaged.
+
+To fix this, remove the quarantine attribute from the built app:
+
+```bash
+xattr -cr src-tauri/target/release/bundle/macos/Vector.app
+```
+
+Alternatively, you can right-click (or Control-click) the app and select **Open** to bypass the Gatekeeper warning for that session.
+
