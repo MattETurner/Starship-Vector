@@ -2,6 +2,8 @@
 
 Vector is a fast, local dataset explorer built with Tauri, React, and DuckDB. It allows users to quickly ingest, filter, sort, and search through datasets (like CSVs or Parquets) seamlessly on their desktop without needing to upload data to a remote server.
 
+<img width="680" height="435" alt="image" src="https://github.com/user-attachments/assets/6ff37164-9238-4f69-b615-790cdee807c9" />
+
 ## Features
 - **Local Ingestion:** Parse local files instantly using an embedded DuckDB instance.
 - **Advanced Filtering and Search:** Use comprehensive Datagrid-like filters or a global text search across the dataset.
