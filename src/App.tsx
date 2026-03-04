@@ -133,6 +133,7 @@ function App() {
         multiple: false,
         filters: [
           { name: "Data", extensions: ["csv", "json", "parquet"] },
+          { name: "Logs", extensions: ["log", "syslog", "access", "error"] },
           { name: "All", extensions: ["*"] },
         ],
       });

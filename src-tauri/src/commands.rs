@@ -29,16 +29,32 @@ pub fn load_file(state: tauri::State<AppState>, path: &str) -> Result<String, St
     conn.execute_batch("DROP SEQUENCE IF EXISTS row_id_seq;")
         .map_err(|e| e.to_string())?;
 
-    // Create new table datasets from file. We'll use read_csv_auto or read_parquet automatically based on extension,
-    // but DuckDB's simple SELECT * FROM 'path' figures it out.
-    conn.execute_batch(
-        &format!("
-            CREATE SEQUENCE row_id_seq;
-            CREATE TABLE dataset AS SELECT nextval('row_id_seq') as _row_id, * FROM '{}';
-        ", path)
-    ).map_err(|e| e.to_string())?;
+    // Determine whether this looks like a log file by extension.
+    let ext = std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_lowercase())
+        .unwrap_or_default();
 
-    Ok("File loaded successfully".to_string())
+    let is_log = matches!(ext.as_str(), "log" | "syslog" | "access" | "error");
+
+    if is_log {
+        // Stream-parse the log file and insert into DuckDB.
+        // Returns the detected format name for the success message.
+        let fmt_name = crate::logparser::detect_and_load(&conn, path)?;
+        Ok(format!("Loaded as «{fmt_name}»"))
+    } else {
+        // For CSV / JSON / Parquet DuckDB's reader handles everything.
+        conn.execute_batch(
+            &format!(
+                "CREATE SEQUENCE row_id_seq;
+                 CREATE TABLE dataset AS SELECT nextval('row_id_seq') as _row_id, * FROM '{}';",
+                path
+            )
+        )
+        .map_err(|e| e.to_string())?;
+        Ok("File loaded successfully".to_string())
+    }
 }
 
 #[tauri::command]

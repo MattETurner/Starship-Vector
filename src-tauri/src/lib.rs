@@ -1,5 +1,6 @@
 pub mod commands;
 pub mod db;
+pub mod logparser;
 
 #[tauri::command]
 fn greet(name: &str) -> String {
