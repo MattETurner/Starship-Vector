@@ -45,7 +45,7 @@ export const api = {
     invoke<SchemaColumn[]>("get_schema"),
 
   fetchData: (params: FetchParams) =>
-    invoke<TableResponse>("fetch_data", params),
+    invoke<TableResponse>("fetch_data", { ...params }),
 
   getDistinctValues: (column: string, globalSearch: string, filters: Filter[]) =>
     invoke<string[]>("get_distinct_values", { column, globalSearch, filters }),

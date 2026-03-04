@@ -183,7 +183,7 @@ pub fn detect_and_load(conn: &duckdb::Connection, path: &str) -> Result<String, 
         let f = File::open(path).map_err(|e| e.to_string())?;
         BufReader::new(f)
             .lines()
-            .filter_map(|l| l.ok())
+            .map_while(Result::ok)
             .filter(|l| !l.trim().is_empty() && !l.starts_with('#'))
             .take(20)
             .collect()
@@ -245,11 +245,11 @@ pub fn detect_and_load(conn: &duckdb::Connection, path: &str) -> Result<String, 
             buf.push(format!("(nextval('row_id_seq'), {})", sql_vals.join(", ")));
         }
         if buf.len() >= BATCH {
-            flush(&conn, &col_names, &mut buf)?;
+            flush(conn, &col_names, &mut buf)?;
         }
     }
     if !buf.is_empty() {
-        flush(&conn, &col_names, &mut buf)?;
+        flush(conn, &col_names, &mut buf)?;
     }
 
     conn.execute_batch("COMMIT").map_err(|e| e.to_string())?;
