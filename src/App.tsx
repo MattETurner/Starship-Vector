@@ -62,6 +62,14 @@ function App() {
   const startX = useRef<number>(0);
   const startWidth = useRef<number>(0);
 
+  // Filter Popover Resize State
+  const [filterMenuWidth, setFilterMenuWidth] = useState<number>(256); // w-64 is 16rem = 256px
+  const [filterMenuOffset, setFilterMenuOffset] = useState<number>(0);
+  const isResizingFilter = useRef<'left' | 'right' | null>(null);
+  const filterStartX = useRef<number>(0);
+  const filterStartWidth = useRef<number>(0);
+  const filterStartOffset = useRef<number>(0);
+
   // Cell Modal State
   const [activeCellContent, setActiveCellContent] = useState<string | null>(null);
   // Filter Popover State
@@ -187,17 +195,35 @@ function App() {
 
   // Mouse up event for drag resizing
   useEffect(() => {
-    const handleMouseUp = () => {
-      isResizing.current = null;
-      document.body.style.cursor = '';
+    const handleMouseMove = (e: MouseEvent) => {
+      if (isResizing.current) {
+        const col = isResizing.current;
+        const delta = e.clientX - startX.current;
+        const newWidth = Math.max(100, startWidth.current + delta);
+        setColWidths(prev => ({ ...prev, [col]: newWidth }));
+      } else if (isResizingFilter.current) {
+        const delta = e.clientX - filterStartX.current;
+        if (isResizingFilter.current === 'right') {
+          const newWidth = Math.max(200, filterStartWidth.current + delta);
+          setFilterMenuWidth(newWidth);
+        } else if (isResizingFilter.current === 'left') {
+          // Moving left increases width, moving right decreases width
+          // Max width restricts how far right we can go (min 200px)
+          const newWidth = Math.max(200, filterStartWidth.current - delta);
+
+          // Only adjust offset if we haven't hit the minimum width, or if we're expanding
+          if (filterStartWidth.current - delta >= 200) {
+            setFilterMenuWidth(newWidth);
+            setFilterMenuOffset(filterStartOffset.current + delta);
+          }
+        }
+      }
     };
 
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!isResizing.current) return;
-      const col = isResizing.current;
-      const delta = e.clientX - startX.current;
-      const newWidth = Math.max(100, startWidth.current + delta);
-      setColWidths(prev => ({ ...prev, [col]: newWidth }));
+    const handleMouseUp = () => {
+      isResizing.current = null;
+      isResizingFilter.current = null;
+      document.body.style.cursor = '';
     };
 
     window.addEventListener('mouseup', handleMouseUp);
@@ -271,6 +297,8 @@ function App() {
       return;
     }
     setActiveFilterCol(colName);
+    setFilterMenuWidth(256);
+    setFilterMenuOffset(0);
     setFilterInputVal("");
     setFilterDateOp(">=");
     setFilterDateVal2("");
@@ -527,7 +555,37 @@ function App() {
 
                             {/* Filter Popover */}
                             {activeFilterCol === col.name && (
-                              <div className="absolute top-12 left-0 w-64 bg-zinc-800 border border-zinc-700 rounded shadow-xl p-3 z-50 flex flex-col max-h-80 cursor-default" onClick={e => e.stopPropagation()}>
+                              <div
+                                className="absolute top-12 bg-zinc-800 border border-zinc-700 rounded shadow-xl p-3 z-50 flex flex-col max-h-80 cursor-default"
+                                style={{ width: `${filterMenuWidth}px`, left: `${filterMenuOffset}px` }}
+                                onClick={e => e.stopPropagation()}
+                              >
+                                {/* Left Resize Handle */}
+                                <div
+                                  className="absolute left-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-orange-500/50 transition-colors z-50 -ml-1 rounded-l"
+                                  onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    isResizingFilter.current = 'left';
+                                    filterStartX.current = e.clientX;
+                                    filterStartWidth.current = filterMenuWidth;
+                                    filterStartOffset.current = filterMenuOffset;
+                                    document.body.style.cursor = 'col-resize';
+                                  }}
+                                />
+                                {/* Right Resize Handle */}
+                                <div
+                                  className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-orange-500/50 transition-colors z-50 -mr-1 rounded-r"
+                                  onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    isResizingFilter.current = 'right';
+                                    filterStartX.current = e.clientX;
+                                    filterStartWidth.current = filterMenuWidth;
+                                    filterStartOffset.current = filterMenuOffset;
+                                    document.body.style.cursor = 'col-resize';
+                                  }}
+                                />
 
                                 {isTime ? (
                                   <div className="flex flex-col space-y-2 mb-3">

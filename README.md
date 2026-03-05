@@ -2,12 +2,12 @@
 
 A fast, local dataset explorer built with [Tauri](https://tauri.app), [React](https://react.dev), and [DuckDB](https://duckdb.org). Load CSV, Parquet, JSON, and log files instantly — no server, no uploads, no cloud.
 
-<img width="680" height="435" alt="image" src="https://github.com/user-attachments/assets/6ff37164-9238-4f69-b615-790cdee807c9" />
+![Starship Vector Demo](demo_1.gif)
 
 ## Features
 
 - **Local ingestion** — files are read directly by an embedded DuckDB instance; nothing leaves your machine.
-- **Filtering & search** — column-level filters plus a global text search across the full dataset.
+- **Filtering & search** — column-level filters plus a global text search across the full dataset. Resizable filter tabs allow for viewing long option names easily.
 - **Row selection** — pin rows of interest; they remain visible as filters change.
 - **Timeline heatmap** — auto-detected timestamp columns are visualised as an activity heatmap.
 - **Log file support** — parses Apache/Nginx access & error logs, syslog (RFC 3164/5424), and plain-text logs into structured columns.
