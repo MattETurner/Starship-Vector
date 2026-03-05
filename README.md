@@ -2,7 +2,7 @@
 
 A fast, local dataset explorer built with [Tauri](https://tauri.app), [React](https://react.dev), and [DuckDB](https://duckdb.org). Load CSV, Parquet, JSON, and log files instantly — no server, no uploads, no cloud.
 
-![Starship Vector Demo](demo_1.gif)
+![Starship Vector Demo](./demo_1.gif)
 
 ## Features
 
