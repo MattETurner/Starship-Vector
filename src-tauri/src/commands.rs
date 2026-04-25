@@ -1,5 +1,4 @@
 use crate::db::AppState;
-use duckdb::Connection;
 use serde::Serialize;
 
 #[derive(Serialize)]
@@ -559,13 +558,4 @@ pub fn select_table(state: tauri::State<AppState>, table_name: String) -> Result
     .map_err(|e| format!("Failed to load table '{table_name}': {e}"))?;
 
     Ok(())
-}
-
-/// Helper used only inside this module to share the read-only open logic in
-/// tests.  Not exposed as a Tauri command.
-#[allow(dead_code)]
-fn open_read_only(path: &str) -> duckdb::Result<Connection> {
-    use duckdb::{AccessMode, Config};
-    let config = Config::default().access_mode(AccessMode::ReadOnly)?;
-    Connection::open_with_flags(path, config)
 }
