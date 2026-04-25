@@ -60,4 +60,13 @@ export const api = {
 
   getTimelineData: (column: string, globalSearch: string, filters: Filter[]) =>
     invoke<TimelineData[]>("get_timeline_data", { column, globalSearch, filters }),
+
+  /** Open a starship.duckdb file in read-only mode.
+   *  Returns the list of event tables found inside. */
+  openDatabase: (path: string) =>
+    invoke<string[]>("open_database", { path }),
+
+  /** Validate the Starship schema of a table and load it as the active dataset. */
+  selectTable: (tableName: string) =>
+    invoke<void>("select_table", { tableName }),
 };
