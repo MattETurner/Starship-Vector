@@ -28,7 +28,9 @@ pub fn run() {
             commands::fetch_data,
             commands::get_distinct_values,
             commands::export_csv,
-            commands::get_timeline_data
+            commands::get_timeline_data,
+            commands::open_database,
+            commands::select_table
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

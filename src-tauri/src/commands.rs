@@ -23,6 +23,10 @@ pub struct TimelineData {
 pub fn load_file(state: tauri::State<AppState>, path: &str) -> Result<String, String> {
     let conn = state.db.lock().map_err(|e| e.to_string())?;
 
+    // Detach any previously attached Starship database so we return to a clean
+    // in-memory session for this flat-file load.
+    let _ = conn.execute_batch("DETACH IF EXISTS forensic_db;");
+
     // Drop existing sequence and table if any
     conn.execute_batch("DROP TABLE IF EXISTS dataset;")
         .map_err(|e| e.to_string())?;
@@ -461,4 +465,97 @@ pub fn get_timeline_data(
     }
 
     Ok(data)
+}
+
+// ── Starship Handshake commands ───────────────────────────────────────────────
+
+/// Open a `starship.duckdb` file in **read-only** mode (Starship Handshake Rule 3).
+///
+/// Returns the list of user tables found in the database.  The caller must
+/// subsequently call `select_table` to activate one of the returned tables.
+#[tauri::command]
+pub fn open_database(state: tauri::State<AppState>, path: &str) -> Result<Vec<String>, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+
+    // Detach any previously attached database before re-attaching.
+    let _ = conn.execute_batch("DETACH IF EXISTS forensic_db;");
+
+    let safe_path = path.replace('\'', "''");
+    conn.execute_batch(&format!(
+        "ATTACH '{safe_path}' AS forensic_db (READ_ONLY);"
+    ))
+    .map_err(|e| format!("Failed to open database: {e}"))?;
+
+    // List all base tables in the attached database.
+    let query = "SELECT table_name \
+                 FROM information_schema.tables \
+                 WHERE table_catalog = 'forensic_db' \
+                   AND table_schema  = 'main' \
+                   AND table_type    = 'BASE TABLE' \
+                 ORDER BY table_name";
+    let mut stmt = conn.prepare(query).map_err(|e| e.to_string())?;
+    let tables: Vec<String> = stmt
+        .query_map([], |row| row.get(0))
+        .map_err(|e| e.to_string())?
+        .flatten()
+        .collect();
+
+    Ok(tables)
+}
+
+/// The four columns every Starship event table must contain
+/// (Starship Handshake Rule 2 – Schema Integrity).
+const REQUIRED_COLUMNS: &[&str] = &["id", "timestamp", "event_type", "is_flagged"];
+
+/// Validate schema, then copy the selected table from the read-only
+/// `forensic_db` into the in-memory `dataset` table so all existing query
+/// commands continue to work unchanged.
+#[tauri::command]
+pub fn select_table(state: tauri::State<AppState>, table_name: String) -> Result<(), String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+
+    // ── 1. Validate Starship schema (Rule 2) ─────────────────────────────────
+    let col_query = format!(
+        "SELECT column_name \
+         FROM information_schema.columns \
+         WHERE table_catalog = 'forensic_db' \
+           AND table_schema  = 'main' \
+           AND table_name    = '{}'",
+        table_name.replace('\'', "''")
+    );
+    let mut stmt = conn.prepare(&col_query).map_err(|e| e.to_string())?;
+    let columns: Vec<String> = stmt
+        .query_map([], |row| row.get(0))
+        .map_err(|e| e.to_string())?
+        .flatten()
+        .map(|s: String| s.to_lowercase())
+        .collect();
+
+    let missing: Vec<&str> = REQUIRED_COLUMNS
+        .iter()
+        .filter(|&&req| !columns.contains(&req.to_lowercase()))
+        .copied()
+        .collect();
+
+    if !missing.is_empty() {
+        return Err(format!(
+            "Table '{}' is missing required Starship schema columns: {}",
+            table_name,
+            missing.join(", ")
+        ));
+    }
+
+    // ── 2. Copy into in-memory `dataset` with synthetic _row_id ──────────────
+    let safe_table = table_name.replace('"', "\"\"");
+    conn.execute_batch(&format!(
+        "DROP TABLE IF EXISTS dataset;
+         DROP SEQUENCE IF EXISTS row_id_seq;
+         CREATE SEQUENCE row_id_seq;
+         CREATE TABLE dataset AS
+           SELECT nextval('row_id_seq') AS _row_id, *
+           FROM forensic_db.main.\"{safe_table}\";"
+    ))
+    .map_err(|e| format!("Failed to load table '{table_name}': {e}"))?;
+
+    Ok(())
 }

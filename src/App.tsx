@@ -81,6 +81,12 @@ function App() {
   const [selectedDistinctValues, setSelectedDistinctValues] = useState<Set<string>>(new Set());
   const [isDistinctLoading, setIsDistinctLoading] = useState(false);
 
+  // Starship Handshake – DuckDB table picker state
+  const [availableTables, setAvailableTables] = useState<string[]>([]);
+  const [showTablePicker, setShowTablePicker] = useState(false);
+  const [pendingDuckDBPath, setPendingDuckDBPath] = useState<string | null>(null);
+  const [activeTable, setActiveTable] = useState<string | null>(null);
+
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const virtualizer = useVirtualizer({
@@ -140,6 +146,7 @@ function App() {
       const selected = await open({
         multiple: false,
         filters: [
+          { name: "Starship Database", extensions: ["duckdb"] },
           { name: "Data", extensions: ["csv", "json", "parquet"] },
           { name: "Logs", extensions: ["log", "syslog", "access", "error"] },
           { name: "All", extensions: ["*"] },
@@ -150,7 +157,7 @@ function App() {
       const path = typeof selected === "string" ? selected : null;
       if (!path) return;
 
-      // Reset states
+      // Reset common UI state
       setGlobalSearch("");
       setGlobalSearchInput("");
       setFilters([]);
@@ -160,10 +167,75 @@ function App() {
       setSelectedRowIds(new Set());
       setShowSelectedOnly(false);
       lastActiveRowId.current = null;
-      await loadData(path, true);
-      // Automatically collapse sidebar to maximize view area
-      setIsSidebarOpen(false);
+
+      const isDuckDB = path.toLowerCase().endsWith(".duckdb");
+      if (isDuckDB) {
+        setLoading(true);
+        try {
+          const tables = await api.openDatabase(path);
+          if (tables.length === 0) {
+            toast("error", "No tables found in this database.");
+            return;
+          }
+          if (tables.length === 1) {
+            await initFromDuckDB(path, tables[0]);
+          } else {
+            setPendingDuckDBPath(path);
+            setAvailableTables(tables);
+            setShowTablePicker(true);
+          }
+        } catch (e) {
+          toast("error", `Failed to open database: ${e}`);
+        } finally {
+          setLoading(false);
+        }
+      } else {
+        await loadData(path, true);
+        // Automatically collapse sidebar to maximize view area
+        setIsSidebarOpen(false);
+      }
     } catch (e) { console.error(e) }
+  };
+
+  /** Activate a table from an already-attached starship.duckdb. */
+  const initFromDuckDB = async (dbPath: string, tableName: string) => {
+    setLoading(true);
+    try {
+      await api.selectTable(tableName);
+      setFilePath(dbPath);
+      setActiveTable(tableName);
+      const currentSchema = await api.getSchema();
+      setSchema(currentSchema);
+
+      setDataCache({});
+      setFetchingBlocks(new Set());
+      const data = await api.fetchData({
+        limit: CHUNK_SIZE,
+        offset: 0,
+        globalSearch: "",
+        filters: [],
+        sorts: [],
+        selectedRowIds: null,
+      });
+      setTotalRows(data.total_rows);
+      const newCache: Record<number, Row> = {};
+      data.rows.forEach((row, i) => { newCache[i] = row; });
+      setDataCache(newCache);
+      setIsSidebarOpen(false);
+    } catch (e) {
+      toast("error", `Failed to load table: ${e}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /** Called when the user picks a table from the table-picker modal. */
+  const handleTableSelect = async (tableName: string) => {
+    if (!pendingDuckDBPath) return;
+    setShowTablePicker(false);
+    const dbPath = pendingDuckDBPath;
+    setPendingDuckDBPath(null);
+    await initFromDuckDB(dbPath, tableName);
   };
 
   const handleExportClick = async () => {
@@ -371,6 +443,14 @@ function App() {
                     {filePath ? filePath.split('/').pop() : "None"}
                   </span>
                 </div>
+                {activeTable && (
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-zinc-500">Table</span>
+                    <span className="text-zinc-300 font-mono truncate max-w-[120px]" title={activeTable}>
+                      {activeTable}
+                    </span>
+                  </div>
+                )}
                 <div className="flex justify-between items-center text-sm">
                   <span className="text-zinc-500">Rows</span>
                   <span className="text-zinc-300 font-mono">{totalRows.toLocaleString()}</span>
@@ -489,7 +569,7 @@ function App() {
             <div className="w-16 h-16 rounded-3xl bg-zinc-900 border border-zinc-800 flex items-center justify-center shadow-inner">
               <ArrowRight size={24} className="text-zinc-700" />
             </div>
-            <p className="text-sm">Open a CSV or Parquet file from the sidebar to begin.</p>
+            <p className="text-sm">Open a <span className="font-mono text-zinc-500">starship.duckdb</span> or CSV/Parquet file from the sidebar to begin.</p>
           </div>
         ) : (
           <div className="flex flex-col flex-1 overflow-hidden z-10 w-full">
@@ -853,6 +933,38 @@ function App() {
             opacity: 1;
         }
       `}</style>
+
+      {/* Starship Handshake – Table Picker Modal */}
+      {showTablePicker && (
+        <div className="fixed inset-0 bg-black/75 z-50 flex items-center justify-center">
+          <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-6 w-96 shadow-2xl flex flex-col max-h-[80vh]">
+            <div className="flex items-center justify-between mb-1">
+              <h3 className="text-base font-semibold text-zinc-100">Select a Table</h3>
+              <button
+                onClick={() => { setShowTablePicker(false); setPendingDuckDBPath(null); }}
+                className="text-zinc-500 hover:text-white p-1 rounded-md hover:bg-zinc-800 transition-colors"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <p className="text-xs text-zinc-500 mb-4">
+              Choose a forensic event table from{" "}
+              <span className="font-mono text-zinc-400">{pendingDuckDBPath?.split("/").pop()}</span>
+            </p>
+            <div className="overflow-y-auto custom-scrollbar space-y-2">
+              {availableTables.map(table => (
+                <button
+                  key={table}
+                  onClick={() => handleTableSelect(table)}
+                  className="w-full text-left px-3 py-2.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700/50 hover:border-blue-500/40 text-zinc-200 font-mono text-sm transition-colors"
+                >
+                  {table}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
